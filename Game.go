@@ -149,7 +149,7 @@ func (g *Game) Update() error {
 			g.penguin.frameDelay = 0
 		}
 
-		// Move penguin randomly
+		// Move penguin randomly s
 		g.penguin.moveTimer++
 		if g.penguin.moveTimer >= 60 {
 			g.penguin.moveTimer = 0
