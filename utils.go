@@ -11,6 +11,10 @@ const (
 	DirUp    = 1
 	DirLeft  = 2
 	DirRight = 3
+
+	// Penguin AI modes
+	ModeChase = 0
+	ModeFlee  = 1
 )
 
 func clamp(value, min, max float64) float64 {
@@ -26,4 +30,14 @@ func clamp(value, min, max float64) float64 {
 // randInt returns integer in [min,max], inclusive.
 func randInt(min, max int) int {
 	return rand.Intn(max-min+1) + min
+}
+
+func signf(v float64) float64 {
+	if v > 0 {
+		return 1
+	}
+	if v < 0 {
+		return -1
+	}
+	return 0
 }

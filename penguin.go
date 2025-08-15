@@ -12,6 +12,9 @@ type PenguinEnemy struct {
 	teleportTimer          int
 	scareInterval          int
 
+	// combat/AI
 	Health      int
 	invulnUntil time.Time
+	mode        int     // ModeChase or ModeFlee
+	speed       float64 // pixels per tick (e.g., 2.5 when chasing)
 }

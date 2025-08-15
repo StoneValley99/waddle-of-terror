@@ -25,6 +25,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	deathSheet, _, err := ebitenutil.NewImageFromFile("graphics/vampire/Death/Vampires2_Death_full.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	background, _, err := ebitenutil.NewImageFromFile("graphics/background.png")
 	if err != nil {
 		log.Fatal(err)
@@ -33,19 +38,26 @@ func main() {
 	game := &Game{
 		spriteSheet:         spriteSheet,
 		stabbingSpriteSheet: stabbingSpriteSheet,
+		deathSpriteSheet:    deathSheet, // NEW
 		enemyPengSheet:      enemyPengSheet,
 		background:          background,
 		framesPerDirection:  6,
 		idle:                true,
 		x:                   float64(background.Bounds().Dx()) / 2,
 		y:                   float64(background.Bounds().Dy()) / 2,
-		attackCooldown:      300 * time.Millisecond,
+
+		deathFramesPerDir: 11, // guess; tweak to match your sheet if needed
+
+		attackCooldown: 300 * time.Millisecond,
+
 		penguin: PenguinEnemy{
 			x:             300,
 			y:             300,
 			visible:       true,
 			scareInterval: 600, // ~10s at 60fps
 			Health:        3,
+			mode:          ModeChase, // starts aggressive
+			speed:         2.5,       // faster when chasing
 		},
 	}
 
