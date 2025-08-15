@@ -46,7 +46,9 @@ func ApplyAttackToPenguin(a AttackBox, p *PenguinEnemy, now time.Time) bool {
 	if now.Before(p.invulnUntil) {
 		return false
 	}
-	if RectsOverlap(a.PosX, a.PosY, a.W, a.H, p.x, p.y, spriteW, spriteH) {
+
+	px, py, pw, ph := PenguinCollider(p.x, p.y)
+	if RectsOverlap(a.PosX, a.PosY, a.W, a.H, px, py, pw, ph) {
 		p.Health -= a.Damage
 		p.invulnUntil = now.Add(200 * time.Millisecond)
 		return true

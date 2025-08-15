@@ -14,7 +14,7 @@ type Game struct {
 	// assets
 	spriteSheet         *ebiten.Image
 	stabbingSpriteSheet *ebiten.Image
-	deathSpriteSheet    *ebiten.Image // NEW
+	deathSpriteSheet    *ebiten.Image
 	enemyPengSheet      *ebiten.Image
 	background          *ebiten.Image
 
@@ -25,7 +25,7 @@ type Game struct {
 	framesPerDirection int
 	frameDelay         int
 	idle               bool
-	stabbing           bool // visual state (latched)
+	stabbing           bool // latched visual state
 
 	// death animation
 	vampireDead       bool
@@ -49,10 +49,9 @@ type Game struct {
 
 func (g *Game) Update() error {
 	g.idle = true
-
 	now := time.Now()
 
-	// --- input: movement (disabled when dead) ---
+	// --- Input (disabled when dead) ---
 	if !g.vampireDead {
 		if ebiten.IsKeyPressed(ebiten.KeyArrowUp) {
 			g.y -= 2
@@ -75,26 +74,24 @@ func (g *Game) Update() error {
 			g.idle = false
 		}
 
-		// --- attack trigger (tap once, plays out) ---
+		// Attack trigger (tap once, plays out)
 		if inpututil.IsKeyJustPressed(ebiten.KeyX) && now.After(g.nextAttackAt) {
 			box := BuildAttackBox(g.x, g.y, g.direction)
 			box.Created = now
 			g.attacks = append(g.attacks, box)
 			g.nextAttackAt = now.Add(g.attackCooldown)
-
-			// latch the animation for full sequence (12 frames * 5 ticks)
-			g.attackAnimTicks = 12 * 5
+			g.attackAnimTicks = 12 * 5 // latch whole 12-frame anim @5 ticks each
 		}
 	}
 
-	// visual stabbing state based on latch (no stabbing if dead)
+	// --- Stab animation latch ---
 	g.stabbing = g.attackAnimTicks > 0 && !g.vampireDead
 	if g.attackAnimTicks > 0 {
 		g.attackAnimTicks--
 		g.idle = false
 	}
 
-	// --- animation (player / death) ---
+	// --- Animations (death/walk/stab) ---
 	if g.vampireDead {
 		g.deathFrameDelay++
 		if g.deathFrameDelay >= 5 {
@@ -119,55 +116,53 @@ func (g *Game) Update() error {
 		g.frame = 0
 	}
 
-	// --- camera follow ---
-	g.cameraX = g.x - 320
-	g.cameraY = g.y - 240
-	screenWidth := 640.0
-	screenHeight := 480.0
+	// --- Camera follow ---
+	g.cameraX = clamp(g.x-320, 0, float64(g.background.Bounds().Dx())-640)
+	g.cameraY = clamp(g.y-240, 0, float64(g.background.Bounds().Dy())-480)
+
+	// --- Penguin AI & movement ---
 	mapWidth := float64(g.background.Bounds().Dx())
 	mapHeight := float64(g.background.Bounds().Dy())
-	g.cameraX = clamp(g.cameraX, 0, mapWidth-screenWidth)
-	g.cameraY = clamp(g.cameraY, 0, mapHeight-screenHeight)
-
-	// --- penguin scare / movement (AI) ---
 	g.updatePenguinAI(mapWidth, mapHeight)
 
-	// --- player clamp ---
+	// --- Clamp player ---
 	g.x = clamp(g.x, 0, mapWidth-spriteW)
 	g.y = clamp(g.y, 0, mapHeight-spriteH)
 
-	// --- penguin collides with vampire → vampire dies ---
-	if !g.vampireDead && g.penguin.visible &&
-		g.penguin.mode == ModeChase &&
-		RectsOverlap(g.x, g.y, spriteW, spriteH, g.penguin.x, g.penguin.y, spriteW, spriteH) {
+	// --- Tight colliders for death/hit detection ---
+	vx, vy, vw, vh := VampCollider(g.x, g.y)
+	px, py, pw, ph := PenguinCollider(g.penguin.x, g.penguin.y)
 
+	// Vampire dies if tight colliders overlap while penguin is chasing
+	if !g.vampireDead && g.penguin.visible && g.penguin.mode == ModeChase &&
+		RectsOverlap(vx, vy, vw, vh, px, py, pw, ph) {
 		g.vampireDead = true
-		g.deathFrame = 0
-		g.deathFrameDelay = 0
-		g.attackAnimTicks = 0 // stop any attack anim
+		g.deathFrame, g.deathFrameDelay, g.attackAnimTicks = 0, 0, 0
 	}
 
-	// --- body collision: shove penguin only (keeps "run-away" feel) ---
-	if g.penguin.visible && RectsOverlap(g.x, g.y, spriteW, spriteH, g.penguin.x, g.penguin.y, spriteW, spriteH) {
+	// Body push = shove penguin ONLY (keeps “run-away” vibe)
+	// We check overlap with tight colliders, but push using sprite-sized boxes for simplicity.
+	if g.penguin.visible && RectsOverlap(vx, vy, vw, vh, px, py, pw, ph) {
 		ResolveDynamicVsSolid(&g.penguin.x, &g.penguin.y, spriteW, spriteH, g.x, g.y, spriteW, spriteH)
 	}
 
-	// --- apply attacks to penguin & prune expired ---
+	// --- Apply attacks (switch to flee on hit) ---
 	if g.penguin.visible && g.penguin.Health > 0 && !g.vampireDead {
 		for i := range g.attacks {
 			a := &g.attacks[i]
 			if !a.Expired(now) && !a.Hit && ApplyAttackToPenguin(*a, &g.penguin, now) {
 				a.Hit = true
 				g.hitCount++
-
-				// NEW: switch penguin to flee mode on hit
+				// Penguin flees after getting hit
 				g.penguin.mode = ModeFlee
-				g.penguin.speed = 2.5 // same speed, but moving away now
+				if g.penguin.speed == 0 {
+					g.penguin.speed = 2.5
+				}
 			}
 		}
 	}
 
-	// prune expired
+	// Prune expired attack boxes
 	dst := g.attacks[:0]
 	for _, a := range g.attacks {
 		if !a.Expired(now) {
@@ -176,7 +171,7 @@ func (g *Game) Update() error {
 	}
 	g.attacks = dst
 
-	// hide on death (placeholder)
+	// Hide penguin on death (placeholder)
 	if g.penguin.Health <= 0 {
 		g.penguin.visible = false
 	}
@@ -185,7 +180,16 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) updatePenguinAI(mapWidth, mapHeight float64) {
-	// scare/teleport cycle
+	// Safety: ensure a nonzero speed
+	if g.penguin.speed == 0 {
+		if g.penguin.mode == ModeChase {
+			g.penguin.speed = 2.5
+		} else {
+			g.penguin.speed = 2.5
+		}
+	}
+
+	// Scare/teleport cycle
 	g.penguin.teleportTimer++
 	if g.penguin.visible {
 		if g.penguin.teleportTimer >= g.penguin.scareInterval {
@@ -196,6 +200,8 @@ func (g *Game) updatePenguinAI(mapWidth, mapHeight float64) {
 		if g.penguin.teleportTimer >= 60 { // ~1s
 			g.penguin.visible = true
 			g.penguin.teleportTimer = 0
+
+			// Spawn just off-screen around the player
 			offset := 100.0
 			switch randInt(0, 3) {
 			case 0:
@@ -207,22 +213,23 @@ func (g *Game) updatePenguinAI(mapWidth, mapHeight float64) {
 			case 3:
 				g.penguin.x, g.penguin.y = g.x+320+offset, g.y
 			}
-			// NEW: on spawn, go aggressive
+
+			// On spawn: go aggressive
 			g.penguin.mode = ModeChase
 			g.penguin.speed = 2.5
 		}
 	}
 
-	// movement/anim when visible
+	// Movement/anim when visible
 	if g.penguin.visible {
-		// basic 2-frame anim
+		// Simple 2-frame anim
 		g.penguin.frameDelay++
 		if g.penguin.frameDelay >= 10 {
 			g.penguin.frame = (g.penguin.frame + 1) % 2
 			g.penguin.frameDelay = 0
 		}
 
-		// NEW: chase or flee
+		// Chase or flee
 		var stepX, stepY float64
 		if g.penguin.mode == ModeChase {
 			stepX = signf(g.x-g.penguin.x) * g.penguin.speed
@@ -232,35 +239,37 @@ func (g *Game) updatePenguinAI(mapWidth, mapHeight float64) {
 			stepY = signf(g.penguin.y-g.y) * g.penguin.speed
 		}
 
-		// record simple direction for anim facing (optional)
-		if stepX > 0 {
+		// (Optional) record step sign for future facing logic
+		switch {
+		case stepX > 0:
 			g.penguin.directionX = 1
-		} else if stepX < 0 {
+		case stepX < 0:
 			g.penguin.directionX = -1
-		} else {
+		default:
 			g.penguin.directionX = 0
 		}
-		if stepY > 0 {
+		switch {
+		case stepY > 0:
 			g.penguin.directionY = 1
-		} else if stepY < 0 {
+		case stepY < 0:
 			g.penguin.directionY = -1
-		} else {
+		default:
 			g.penguin.directionY = 0
 		}
 
-		// move & clamp
+		// Move & clamp
 		g.penguin.x = clamp(g.penguin.x+stepX, 0, mapWidth-spriteW)
 		g.penguin.y = clamp(g.penguin.y+stepY, 0, mapHeight-spriteH)
 	}
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	// background
+	// Background
 	bgOp := &ebiten.DrawImageOptions{}
 	bgOp.GeoM.Translate(-g.cameraX, -g.cameraY)
 	screen.DrawImage(g.background, bgOp)
 
-	// penguin (2-frame sheet)
+	// Penguin (2-frame sheet)
 	if g.penguin.visible {
 		pw := g.enemyPengSheet.Bounds().Dx() / 2
 		ph := g.enemyPengSheet.Bounds().Dy()
@@ -273,7 +282,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(img, op)
 	}
 
-	// vampire: draw death or normal
+	// Vampire: death vs normal
 	if g.vampireDead {
 		sheet := g.deathSpriteSheet
 		fw := sheet.Bounds().Dx() / g.deathFramesPerDir
@@ -288,7 +297,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		op.GeoM.Translate(g.x-g.cameraX, g.y-g.cameraY)
 		screen.DrawImage(img, op)
 	} else {
-		// choose sheet (stabbing vs walking/idle)
+		// Choose sheet (stabbing vs walk/idle)
 		var sheet *ebiten.Image
 		var framesPerDir int
 		if g.stabbing {
@@ -311,8 +320,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(img, op)
 	}
 
-	// hit counter
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Hits: %d", g.hitCount), 8, 8)
+	// UI / debug
+	modeText := "Chase"
+	if g.penguin.mode == ModeFlee {
+		modeText = "Flee"
+	}
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Hits: %d  Mode:%s  Speed:%.1f", g.hitCount, modeText, g.penguin.speed), 8, 8)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
