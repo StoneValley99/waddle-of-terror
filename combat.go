@@ -8,35 +8,39 @@ type AttackBox struct {
 	LifeMS     int
 	Created    time.Time
 	Damage     int
+	Hit        bool // ensure each box only counts once
 }
 
 func (a AttackBox) Expired(now time.Time) bool {
 	return now.Sub(a.Created) > time.Duration(a.LifeMS)*time.Millisecond
 }
 
-// Build a short-lived hurtbox in front of vampire based on facing.
+// Build a short-lived hurtbox in front of the vampire based on direction.
 func BuildAttackBox(playerX, playerY float64, direction int) AttackBox {
-	w, h := 24.0*3, 20.0*3 // scaled like sprites (x3)
+	// hitbox sized relative to 3x sprite scale
+	w, h := 24.0*3, 20.0*3
 	ax, ay := playerX, playerY
+
 	switch direction {
-	case 2: // right
+	case DirRight:
 		ax = playerX + spriteW
 		ay = playerY + (spriteH-h)/2
-	case 1: // up
-		ax = playerX + (spriteW-w)/2
-		ay = playerY - h
-	case 3: // left
+	case DirLeft:
 		ax = playerX - w
 		ay = playerY + (spriteH-h)/2
-	case 0: // down
+	case DirUp:
+		ax = playerX + (spriteW-w)/2
+		ay = playerY - h
+	case DirDown:
 		ax = playerX + (spriteW-w)/2
 		ay = playerY + spriteH
 	}
-	return AttackBox{PosX: ax, PosY: ay, W: w, H: h, LifeMS: 120, Damage: 1}
+
+	return AttackBox{PosX: ax, PosY: ay, W: w, H: h, LifeMS: 140, Damage: 1}
 }
 
 func ApplyAttackToPenguin(a AttackBox, p *PenguinEnemy, now time.Time) bool {
-	if a.Expired(now) {
+	if a.Expired(now) || a.Hit {
 		return false
 	}
 	if now.Before(p.invulnUntil) {

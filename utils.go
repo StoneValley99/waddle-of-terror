@@ -3,8 +3,14 @@ package main
 import "math/rand"
 
 const (
-	spriteW = 32.0 * 3 // 96x96 approximate collision box
+	spriteW = 32.0 * 3 // 96x96
 	spriteH = 32.0 * 3
+
+	// unified direction mapping used by sprites and attacks
+	DirDown  = 0
+	DirUp    = 1
+	DirLeft  = 2
+	DirRight = 3
 )
 
 func clamp(value, min, max float64) float64 {

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
@@ -18,11 +20,11 @@ type Game struct {
 	// player (vampire)
 	frame              int
 	x, y               float64
-	direction          int // 0: down, 1: left, 2: right, 3: up
+	direction          int // DirDown/DirUp/DirLeft/DirRight
 	framesPerDirection int
 	frameDelay         int
 	idle               bool
-	stabbing           bool
+	stabbing           bool // visual state (latched)
 
 	// camera
 	cameraX, cameraY float64
@@ -31,52 +33,68 @@ type Game struct {
 	penguin PenguinEnemy
 
 	// combat
-	attacks        []AttackBox
-	nextAttackAt   time.Time
-	attackCooldown time.Duration
+	attacks         []AttackBox
+	nextAttackAt    time.Time
+	attackCooldown  time.Duration
+	attackAnimTicks int // latch: remaining ticks of stab anim
+	hitCount        int // successful strikes counter
 }
 
 func (g *Game) Update() error {
 	g.idle = true
-	g.stabbing = false
 
 	// --- input: movement ---
 	if ebiten.IsKeyPressed(ebiten.KeyArrowUp) {
 		g.y -= 2
-		g.direction = 1
+		g.direction = DirUp
 		g.idle = false
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyArrowDown) {
 		g.y += 2
-		g.direction = 0
+		g.direction = DirDown
 		g.idle = false
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyArrowLeft) {
 		g.x -= 2
-		g.direction = 2
+		g.direction = DirLeft
 		g.idle = false
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyArrowRight) {
 		g.x += 2
-		g.direction = 3
+		g.direction = DirRight
 		g.idle = false
 	}
-	if ebiten.IsKeyPressed(ebiten.KeyX) {
-		g.stabbing = true
+
+	// --- attack trigger (tap once, plays out) ---
+	now := time.Now()
+	if inpututil.IsKeyJustPressed(ebiten.KeyX) && now.After(g.nextAttackAt) {
+		box := BuildAttackBox(g.x, g.y, g.direction)
+		box.Created = now
+		g.attacks = append(g.attacks, box)
+		g.nextAttackAt = now.Add(g.attackCooldown)
+
+		// latch the animation for full sequence (12 frames * 5 ticks)
+		g.attackAnimTicks = 12 * 5
+	}
+
+	// visual stabbing state based on latch
+	g.stabbing = g.attackAnimTicks > 0
+	if g.attackAnimTicks > 0 {
+		g.attackAnimTicks--
 		g.idle = false
 	}
 
 	// --- animation (player) ---
-	if !g.idle && !g.stabbing {
-		g.frameDelay++
-		if g.frameDelay >= 5 {
-			g.frame = (g.frame + 1) % g.framesPerDirection
-			g.frameDelay = 0
-		}
-	} else if g.stabbing {
+	if g.stabbing {
 		g.frameDelay++
 		if g.frameDelay >= 5 {
 			g.frame = (g.frame + 1) % 12
+			g.frameDelay = 0
+		}
+	} else if !g.idle {
+		g.frameDelay++
+		if g.frameDelay >= 5 {
+			g.frame = (g.frame + 1) % g.framesPerDirection
 			g.frameDelay = 0
 		}
 	} else {
@@ -100,45 +118,34 @@ func (g *Game) Update() error {
 	g.x = clamp(g.x, 0, mapWidth-spriteW)
 	g.y = clamp(g.y, 0, mapHeight-spriteH)
 
-	// --- body collision: push penguin away if overlapping (when visible) ---
+	// --- body collision: shove penguin only (keeps "run-away" feel) ---
 	if g.penguin.visible && RectsOverlap(g.x, g.y, spriteW, spriteH, g.penguin.x, g.penguin.y, spriteW, spriteH) {
 		ResolveDynamicVsSolid(&g.penguin.x, &g.penguin.y, spriteW, spriteH, g.x, g.y, spriteW, spriteH)
 	}
 
-	// --- attack spawn (X just pressed) ---
-	now := time.Now()
-	if inpututil.IsKeyJustPressed(ebiten.KeyX) && now.After(g.nextAttackAt) {
-		box := BuildAttackBox(g.x, g.y, g.direction)
-		box.Created = now
-		g.attacks = append(g.attacks, box)
-		g.nextAttackAt = now.Add(g.attackCooldown)
-	}
-
 	// --- apply attacks to penguin & prune expired ---
 	if g.penguin.visible && g.penguin.Health > 0 {
-		dst := g.attacks[:0]
-		for _, a := range g.attacks {
-			if ApplyAttackToPenguin(a, &g.penguin, now) {
-				// (optional) TODO: sfx/flash/knockback
-			}
-			if !a.Expired(now) {
-				dst = append(dst, a)
+		for i := range g.attacks {
+			a := &g.attacks[i]
+			if !a.Expired(now) && !a.Hit && ApplyAttackToPenguin(*a, &g.penguin, now) {
+				a.Hit = true
+				g.hitCount++
 			}
 		}
-		g.attacks = dst
-		// if penguin died, hide it for now
-		if g.penguin.Health <= 0 {
-			g.penguin.visible = false
+	}
+
+	// prune expired
+	dst := g.attacks[:0]
+	for _, a := range g.attacks {
+		if !a.Expired(now) {
+			dst = append(dst, a)
 		}
-	} else {
-		// still prune expired even if penguin hidden
-		dst := g.attacks[:0]
-		for _, a := range g.attacks {
-			if !a.Expired(now) {
-				dst = append(dst, a)
-			}
-		}
-		g.attacks = dst
+	}
+	g.attacks = dst
+
+	// hide on death (placeholder)
+	if g.penguin.Health <= 0 {
+		g.penguin.visible = false
 	}
 
 	return nil
@@ -209,7 +216,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(img, op)
 	}
 
-	// choose sheet (stabbing/idle-walk)
+	// choose sheet (stabbing vs walking/idle)
 	var sheet *ebiten.Image
 	var framesPerDir int
 	if g.stabbing {
@@ -231,7 +238,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op.GeoM.Translate(g.x-g.cameraX, g.y-g.cameraY)
 	screen.DrawImage(img, op)
 
-	// (optional) debug: draw attack boxes, flashes, etc.
+	// hit counter
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Hits: %d", g.hitCount), 8, 8)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
