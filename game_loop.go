@@ -8,6 +8,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+
+	"image/color"
 )
 
 type Game struct {
@@ -45,6 +47,10 @@ type Game struct {
 	attackCooldown  time.Duration
 	attackAnimTicks int // latch: remaining ticks of stab anim
 	hitCount        int // successful strikes counter
+
+	// respawnButtons
+	respawnButtonVisible bool
+	respawnButtonRect    image.Rectangle
 }
 
 func (g *Game) Update() error {
@@ -82,6 +88,21 @@ func (g *Game) Update() error {
 			g.nextAttackAt = now.Add(g.attackCooldown)
 			g.attackAnimTicks = 12 * 5 // latch whole 12-frame anim @5 ticks each
 		}
+	}
+
+	//if vampire is dead
+		if g.vampireDead {
+		g.respawnButtonVisible = true
+
+		// Check for mouse click inside button
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if pointInRect(x, y, g.respawnButtonRect) {
+				g.respawnPlayer()
+			}
+		}
+	} else {
+		g.respawnButtonVisible = false
 	}
 
 	// --- Stab animation latch ---
@@ -177,6 +198,24 @@ func (g *Game) Update() error {
 	}
 
 	return nil
+}
+
+// helper function
+func pointInRect(x, y int, r image.Rectangle) bool {
+	return x >= r.Min.X && x <= r.Max.X && y >= r.Min.Y && y <= r.Max.Y
+}
+
+func (g *Game) respawnPlayer() {
+	g.vampireDead = false
+	g.x, g.y = 100, 100 // respawn position
+	g.frame = 0
+	g.deathFrame = 0
+	g.hitCount = 0
+	g.attacks = nil
+	g.penguin.Health = 3
+	g.penguin.visible = true
+	g.penguin.mode = ModeChase
+	g.penguin.speed = 2.5
 }
 
 func (g *Game) updatePenguinAI(mapWidth, mapHeight float64) {
@@ -318,6 +357,22 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		op.GeoM.Scale(3, 3)
 		op.GeoM.Translate(g.x-g.cameraX, g.y-g.cameraY)
 		screen.DrawImage(img, op)
+	}
+
+	if g.respawnButtonVisible {
+		// Define button rectangle
+		x, y, w, h := 270, 200, 100, 40
+		g.respawnButtonRect = image.Rect(x, y, x+w, y+h)
+
+		// Draw button background
+		btn := ebiten.NewImage(w, h)
+		btn.Fill(color.RGBA{200, 50, 50, 255}) // red button
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(float64(x), float64(y))
+		screen.DrawImage(btn, op)
+
+		// Draw button text
+		ebitenutil.DebugPrintAt(screen, "Respawn", x+20, y+12)
 	}
 
 	// UI / debug
