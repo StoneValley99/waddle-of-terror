@@ -8,6 +8,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+
+	"image/color"
 )
 
 type Game struct {
@@ -45,11 +47,29 @@ type Game struct {
 	attackCooldown  time.Duration
 	attackAnimTicks int // latch: remaining ticks of stab anim
 	hitCount        int // successful strikes counter
+
+	// respawnButtons
+	respawnButtonVisible bool
+	respawnButtonRect    image.Rectangle
+
+	// startbutton
+	gameStarted         bool
+	startButtonRect     image.Rectangle
 }
 
 func (g *Game) Update() error {
 	g.idle = true
 	now := time.Now()
+
+	if !g.gameStarted {
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if pointInRect(x, y, g.startButtonRect) {
+				g.gameStarted = true
+			}
+		}
+		return nil // Skip game logic until started
+	}
 
 	// --- Input (disabled when dead) ---
 	if !g.vampireDead {
@@ -82,6 +102,21 @@ func (g *Game) Update() error {
 			g.nextAttackAt = now.Add(g.attackCooldown)
 			g.attackAnimTicks = 12 * 5 // latch whole 12-frame anim @5 ticks each
 		}
+	}
+
+	//if vampire is dead
+		if g.vampireDead {
+		g.respawnButtonVisible = true
+
+		// Check for mouse click inside button
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if pointInRect(x, y, g.respawnButtonRect) {
+				g.respawnPlayer()
+			}
+		}
+	} else {
+		g.respawnButtonVisible = false
 	}
 
 	// --- Stab animation latch ---
@@ -179,6 +214,52 @@ func (g *Game) Update() error {
 	return nil
 }
 
+// helper function
+func pointInRect(x, y int, r image.Rectangle) bool {
+	return x >= r.Min.X && x <= r.Max.X && y >= r.Min.Y && y <= r.Max.Y
+}
+
+func (g *Game) respawnPlayer() {
+	g.vampireDead = false
+	g.gameStarted = false
+
+	// Reset player
+	g.x, g.y = 100, 100
+	g.frame = 0
+	g.deathFrame = 0
+	g.hitCount = 0
+	g.attacks = nil
+
+	// Randomize penguin spawn
+	px, py := g.randomPenguinSpawnNearPlayer()
+	g.penguin.x = clamp(px, 0, float64(g.background.Bounds().Dx())-spriteW)
+	g.penguin.y = clamp(py, 0, float64(g.background.Bounds().Dy())-spriteH)
+
+	// Reset penguin state
+	g.penguin.Health = 3
+	g.penguin.visible = true
+	g.penguin.mode = ModeChase
+	g.penguin.speed = 2.5
+	g.penguin.frame = 0
+	g.penguin.frameDelay = 0
+	g.penguin.teleportTimer = 0
+}
+
+func (g *Game) randomPenguinSpawnNearPlayer() (float64, float64) {
+	offset := 100.0
+	switch randInt(0, 3) {
+	case 0:
+		return g.x, g.y - 240 - offset // above
+	case 1:
+		return g.x, g.y + 240 + offset // below
+	case 2:
+		return g.x - 320 - offset, g.y // left
+	case 3:
+		return g.x + 320 + offset, g.y // right
+	}
+	return g.x, g.y // fallback
+}
+
 func (g *Game) updatePenguinAI(mapWidth, mapHeight float64) {
 	// Safety: ensure a nonzero speed
 	if g.penguin.speed == 0 {
@@ -269,6 +350,21 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	bgOp.GeoM.Translate(-g.cameraX, -g.cameraY)
 	screen.DrawImage(g.background, bgOp)
 
+	// draw startbutton
+	if !g.gameStarted {
+		x, y, w, h := 270, 200, 100, 40
+		g.startButtonRect = image.Rect(x, y, x+w, y+h)
+
+		btn := ebiten.NewImage(w, h)
+		btn.Fill(color.RGBA{50, 150, 50, 255}) // green button
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(float64(x), float64(y))
+		screen.DrawImage(btn, op)
+
+		ebitenutil.DebugPrintAt(screen, "Start", x+30, y+12)
+		return // Skip drawing game world until started
+	}
+
 	// Penguin (2-frame sheet)
 	if g.penguin.visible {
 		pw := g.enemyPengSheet.Bounds().Dx() / 2
@@ -318,6 +414,22 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		op.GeoM.Scale(3, 3)
 		op.GeoM.Translate(g.x-g.cameraX, g.y-g.cameraY)
 		screen.DrawImage(img, op)
+	}
+
+	if g.respawnButtonVisible {
+		// Define button rectangle
+		x, y, w, h := 270, 200, 100, 40
+		g.respawnButtonRect = image.Rect(x, y, x+w, y+h)
+
+		// Draw button background
+		btn := ebiten.NewImage(w, h)
+		btn.Fill(color.RGBA{200, 50, 50, 255}) // red button
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(float64(x), float64(y))
+		screen.DrawImage(btn, op)
+
+		// Draw button text
+		ebitenutil.DebugPrintAt(screen, "Respawn", x+20, y+12)
 	}
 
 	// UI / debug
