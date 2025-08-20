@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>Waddle of Terror</title>
+    <style>
+      html, body { margin:0; height:100%; background:#000; }
+      canvas { display:block; margin:0 auto; }
+    </style>
+  </head>
+  <body>
+    <script src="wasm_exec.js"></script>
+    <script>
+      const go = new Go(); // comes from wasm_exec.js
+      if (!WebAssembly.instantiateStreaming) {
+        // Safari fallback
+        WebAssembly.instantiateStreaming = async (resp, importObject) => {
+          const source = await resp.then(r => r.arrayBuffer());
+          return await WebAssembly.instantiate(source, importObject);
+        };
+      }
+      WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject)
+        .then(result => go.run(result.instance))
+        .catch(err => console.error("WASM load failed:", err));
+    </script>
+  </body>
+</html>
