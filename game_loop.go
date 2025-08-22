@@ -16,11 +16,13 @@ const matchTarget = 5 // first to N wins
 
 type Game struct {
 	// assets
-	spriteSheet         *ebiten.Image
-	stabbingSpriteSheet *ebiten.Image
-	deathSpriteSheet    *ebiten.Image
-	enemyPengSheet      *ebiten.Image
-	background          *ebiten.Image
+	spriteSheet          *ebiten.Image
+	stabbingSpriteSheet  *ebiten.Image
+	deathSpriteSheet     *ebiten.Image
+	enemyPengSheet       *ebiten.Image
+	enemyPengAttackSheet *ebiten.Image
+	enemyPengDeathSheet  *ebiten.Image
+	background           *ebiten.Image
 
 	// player (vampire)
 	frame              int
@@ -41,7 +43,10 @@ type Game struct {
 	cameraX, cameraY float64
 
 	// enemy
-	penguin PenguinEnemy
+	penguin          PenguinEnemy
+	pengFramesIdle   int
+	pengFramesAttack int
+	pengFramesDeath  int
 
 	// combat
 	attacks         []AttackBox
@@ -61,10 +66,17 @@ type Game struct {
 	newMatchButtonRect    image.Rectangle
 
 	// rounds / match
-	vampireWins int
-	penguinWins int
-	gameOver    bool
+	vampireWins   int
+	penguinWins   int
+	pendingWinner int
+	gameOver      bool
 }
+
+const (
+	winnerNone = iota
+	winnerVampire
+	winnerPenguin
+)
 
 func (g *Game) Update() error {
 	g.idle = true
@@ -102,12 +114,16 @@ func (g *Game) Update() error {
 
 	// --- BETWEEN ROUNDS: Respawn button / R ---
 	if g.respawnButtonVisible {
+		// keep rect in sync with Draw()
+		x, y, w, h := 270, 200, 100, 40
+		g.respawnButtonRect = image.Rect(x, y, x+w, y+h)
+
 		if inpututil.IsKeyJustPressed(ebiten.KeyR) {
 			g.respawnPlayer()
 		}
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			x, y := ebiten.CursorPosition()
-			if pointInRect(x, y, g.respawnButtonRect) {
+			cx, cy := ebiten.CursorPosition()
+			if pointInRect(cx, cy, g.respawnButtonRect) {
 				g.respawnPlayer()
 			}
 		}
@@ -198,6 +214,14 @@ func (g *Game) Update() error {
 	vx, vy, vw, vh := VampCollider(g.x, g.y)
 	px, py, pw, ph := PenguinCollider(g.penguin.x, g.penguin.y)
 
+	// If penguin is close/overlapping and not dying, show ATTACK sheet
+	if g.penguin.visible && g.penguin.State != PengDeath &&
+		RectsOverlap(vx, vy, vw, vh, px, py, pw, ph) {
+		g.penguin.State = PengAttack
+	} else if g.penguin.State != PengDeath {
+		g.penguin.State = PengIdle
+	}
+
 	// Vampire dies if tight colliders overlap while penguin is chasing → Penguin scores
 	if !g.vampireDead && g.penguin.visible && g.penguin.mode == ModeChase &&
 		RectsOverlap(vx, vy, vw, vh, px, py, pw, ph) {
@@ -205,12 +229,11 @@ func (g *Game) Update() error {
 		g.vampireDead = true
 		g.deathFrame, g.deathFrameDelay, g.attackAnimTicks = 0, 0, 0
 
-		g.penguinWins++
-		g.endRound()
+		g.pendingWinner = winnerPenguin
+		// g.endRound()
 	}
 
 	// Body push = shove penguin ONLY (keeps “run-away” vibe)
-	// Check with tight colliders, push using sprite-sized boxes for simplicity.
 	if g.penguin.visible && RectsOverlap(vx, vy, vw, vh, px, py, pw, ph) {
 		ResolveDynamicVsSolid(&g.penguin.x, &g.penguin.y, spriteW, spriteH, g.x, g.y, spriteW, spriteH)
 	}
@@ -231,10 +254,20 @@ func (g *Game) Update() error {
 		}
 	}
 
-	// If penguin died from attacks → Vampire scores, end round
-	if g.penguin.visible && g.penguin.Health <= 0 {
+	// If penguin died from attacks → Vampire scores, end round (after death anim finishes)
+	if g.penguin.visible && g.penguin.State == PengDeath &&
+		g.penguin.frame >= g.pengColsDeath()-1 {
 		g.penguin.visible = false
 		g.vampireWins++
+		g.endRound()
+	}
+	// Finish vampire death → Penguin scores AFTER vampire death anim finishes
+	if g.pendingWinner == winnerPenguin && g.vampireDead &&
+		g.deathFrame >= g.deathFramesPerDir-1 {
+
+		g.penguinWins++
+		g.pendingWinner = winnerNone
+		g.penguin.State = PengIdle // show a calm penguin with the overlay
 		g.endRound()
 	}
 
@@ -277,23 +310,26 @@ func (g *Game) respawnPlayer() {
 	g.respawnButtonVisible = false
 	g.vampireDead = false
 
-	// Reset player
-	// center player
+	// Reset player (center)
 	mapW := float64(g.background.Bounds().Dx())
 	mapH := float64(g.background.Bounds().Dy())
 	g.x, g.y = mapW/2, mapH/2
 	g.frame = 0
 	g.deathFrame = 0
 	g.hitCount = 0
+	g.attackAnimTicks = 0
 	g.attacks = g.attacks[:0]
 
 	// Reset penguin state and spawn near edge around player
 	g.penguin.Health = 3
+	g.pendingWinner = winnerNone
 	g.penguin.visible = true
 	g.penguin.mode = ModeChase
 	g.penguin.speed = 2.5
 	g.penguin.frame = 0
 	g.penguin.frameDelay = 0
+	g.penguin.deathFrameDelay = 0 // IMPORTANT: reset death timer
+	g.penguin.State = PengIdle    // IMPORTANT: leave death state
 	g.penguin.teleportTimer = 0
 
 	offset := 100.0
@@ -357,11 +393,33 @@ func (g *Game) updatePenguinAI(mapWidth, mapHeight float64) {
 
 	// Movement/anim when visible
 	if g.penguin.visible {
-		// Simple 2-frame anim
-		g.penguin.frameDelay++
-		if g.penguin.frameDelay >= 10 {
-			g.penguin.frame = (g.penguin.frame + 1) % 2
-			g.penguin.frameDelay = 0
+		switch g.penguin.State {
+		case PengDeath:
+			// Play death sheet once, then wait for round logic to hide/score
+			g.penguin.deathFrameDelay++
+			if g.penguin.deathFrameDelay >= 6 { // tweak speed
+				if g.penguin.frame < g.pengColsDeath()-1 {
+					g.penguin.frame++
+				}
+				g.penguin.deathFrameDelay = 0
+			}
+			// No movement during death
+			return
+
+		case PengAttack:
+			// Attack loops while overlapping
+			g.penguin.frameDelay++
+			if g.penguin.frameDelay >= 8 {
+				g.penguin.frame = (g.penguin.frame + 1) % g.pengColsAttack()
+				g.penguin.frameDelay = 0
+			}
+
+		default: // PengIdle
+			g.penguin.frameDelay++
+			if g.penguin.frameDelay >= 10 {
+				g.penguin.frame = (g.penguin.frame + 1) % g.pengColsIdle()
+				g.penguin.frameDelay = 0
+			}
 		}
 
 		// Chase or flee
@@ -402,17 +460,48 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return // Skip drawing world until started
 	}
 
-	// Penguin (2-frame sheet)
+	// Penguin draw
 	if g.penguin.visible {
-		pw := g.enemyPengSheet.Bounds().Dx() / 2
-		ph := g.enemyPengSheet.Bounds().Dy()
-		src := image.Rect(g.penguin.frame*pw, 0, (g.penguin.frame+1)*pw, ph)
-		img := g.enemyPengSheet.SubImage(src).(*ebiten.Image)
+		// Choose sheet by state; fallback safely if a sheet is missing
+		var sheet *ebiten.Image
+		switch g.penguin.State {
+		case PengDeath:
+			if g.enemyPengDeathSheet != nil {
+				sheet = g.enemyPengDeathSheet
+			} else {
+				sheet = g.enemyPengSheet
+			}
+		case PengAttack:
+			if g.enemyPengAttackSheet != nil {
+				sheet = g.enemyPengAttackSheet
+			} else {
+				sheet = g.enemyPengSheet
+			}
+		default:
+			sheet = g.enemyPengSheet
+		}
 
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(3, 3)
-		op.GeoM.Translate(g.penguin.x-g.cameraX, g.penguin.y-g.cameraY)
-		screen.DrawImage(img, op)
+		// Auto-detect columns: assumes one row; if frames are square this is exact.
+		cols := colsFromSheet(sheet, g.gPengFramesForState())
+		if cols <= 0 {
+			cols = 1
+		}
+
+		pw := sheet.Bounds().Dx() / cols
+		ph := sheet.Bounds().Dy()
+		if pw > 0 && ph > 0 {
+			// Clamp frame
+			if g.penguin.frame >= cols {
+				g.penguin.frame = cols - 1
+			}
+			src := image.Rect(g.penguin.frame*pw, 0, (g.penguin.frame+1)*pw, ph)
+			img := sheet.SubImage(src).(*ebiten.Image)
+
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Scale(3, 3)
+			op.GeoM.Translate(g.penguin.x-g.cameraX, g.penguin.y-g.cameraY)
+			screen.DrawImage(img, op)
+		}
 	}
 
 	// Vampire: death vs normal
@@ -489,8 +578,64 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%s wins! New Match", who), x+12, y+12)
 		ebitenutil.DebugPrintAt(screen, "(N)", x+78, y+26)
+		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("AtkCols:%d  DeathCols:%d  Pending:%d",
+			g.gPengFramesAttack(), g.gPengFramesDeath(), g.pendingWinner), 8, 24)
 	}
 }
+
+// Fallback frame counts if auto-detection can’t infer columns
+func (g *Game) gPengFramesIdle() int {
+	if g.pengFramesIdle == 0 {
+		return 2
+	}
+	return g.pengFramesIdle
+}
+func (g *Game) gPengFramesAttack() int {
+	if g.pengFramesAttack == 0 {
+		return 3
+	}
+	return g.pengFramesAttack
+}
+func (g *Game) gPengFramesDeath() int {
+	if g.pengFramesDeath == 0 {
+		return 2
+	}
+	return g.pengFramesDeath
+}
+
+// Auto-detect columns (for one-row sheets). If frames are square, w%h==0 → use w/h.
+// Otherwise use the configured fallback.
+func colsFromSheet(img *ebiten.Image, fallback int) int {
+	if img == nil {
+		return fallback
+	}
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if h > 0 && w%h == 0 {
+		return w / h
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return 1
+}
+
+func (g *Game) gPengFramesForState() int {
+	switch g.penguin.State {
+	case PengDeath:
+		return g.gPengFramesDeath()
+	case PengAttack:
+		return g.gPengFramesAttack()
+	default:
+		return g.gPengFramesIdle()
+	}
+}
+
+func (g *Game) pengColsIdle() int { return colsFromSheet(g.enemyPengSheet, g.gPengFramesIdle()) }
+func (g *Game) pengColsAttack() int {
+	return colsFromSheet(g.enemyPengAttackSheet, g.gPengFramesAttack())
+}
+func (g *Game) pengColsDeath() int { return colsFromSheet(g.enemyPengDeathSheet, g.gPengFramesDeath()) }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return 640, 480

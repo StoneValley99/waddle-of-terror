@@ -30,25 +30,39 @@ func main() {
 		log.Fatal(err)
 	}
 
+	enemyPengAttackSheet, _, err := ebitenutil.NewImageFromFile("graphics/peng/cute_penguin_attack.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	enemyPengDeathSheet, _, err := ebitenutil.NewImageFromFile("graphics/peng/cute_penguin_death.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	background, _, err := ebitenutil.NewImageFromFile("graphics/background.png")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	game := &Game{
-		spriteSheet:         spriteSheet,
-		stabbingSpriteSheet: stabbingSpriteSheet,
-		deathSpriteSheet:    deathSheet, // NEW
-		enemyPengSheet:      enemyPengSheet,
-		background:          background,
-		framesPerDirection:  6,
-		idle:                true,
-		x:                   float64(background.Bounds().Dx()) / 2,
-		y:                   float64(background.Bounds().Dy()) / 2,
+		spriteSheet:          spriteSheet,
+		stabbingSpriteSheet:  stabbingSpriteSheet,
+		deathSpriteSheet:     deathSheet,
+		enemyPengSheet:       enemyPengSheet,
+		enemyPengAttackSheet: enemyPengAttackSheet,
+		enemyPengDeathSheet:  enemyPengDeathSheet,
+		background:           background,
+		framesPerDirection:   6,
+		idle:                 true,
+		x:                    float64(background.Bounds().Dx()) / 2,
+		y:                    float64(background.Bounds().Dy()) / 2,
 
 		deathFramesPerDir: 11, // guess; tweak to match your sheet if needed
-
-		attackCooldown: 300 * time.Millisecond,
+		pengFramesIdle:    2,
+		pengFramesAttack:  3,
+		pengFramesDeath:   2,
+		attackCooldown:    300 * time.Millisecond,
 
 		penguin: PenguinEnemy{
 			x:             300,
@@ -58,6 +72,7 @@ func main() {
 			Health:        3,
 			mode:          ModeChase, // starts aggressive
 			speed:         2.5,       // faster when chasing
+			State:         PengIdle,
 		},
 	}
 
