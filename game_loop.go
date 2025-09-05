@@ -70,6 +70,9 @@ type Game struct {
 	penguinWins   int
 	pendingWinner int
 	gameOver      bool
+
+	// debug
+	debugMode bool
 }
 
 const (
@@ -165,6 +168,11 @@ func (g *Game) Update() error {
 		}
 	}
 
+	// Toggle debug mode
+	if inpututil.IsKeyJustPressed(ebiten.KeyD) {
+		g.debugMode = !g.debugMode
+	}
+
 	// Stab animation latch
 	g.stabbing = g.attackAnimTicks > 0 && !g.vampireDead
 	if g.attackAnimTicks > 0 {
@@ -255,12 +263,16 @@ func (g *Game) Update() error {
 	}
 
 	// If penguin died from attacks → Vampire scores, end round (after death anim finishes)
-	if g.penguin.visible && g.penguin.State == PengDeath &&
-		g.penguin.frame >= g.pengColsDeath()-1 {
-		g.penguin.visible = false
-		g.vampireWins++
-		g.endRound()
+	// --- Let penguin death animation play fully before hiding & scoring ---
+	if g.penguin.visible && g.penguin.State == PengDeath {
+		if g.penguin.frame >= g.pengColsDeath()-1 {
+			// Death animation finished
+			g.penguin.visible = false
+			g.vampireWins++
+			g.endRound()
+		}
 	}
+
 	// Finish vampire death → Penguin scores AFTER vampire death anim finishes
 	if g.pendingWinner == winnerPenguin && g.vampireDead &&
 		g.deathFrame >= g.deathFramesPerDir-1 {
@@ -581,6 +593,17 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("AtkCols:%d  DeathCols:%d  Pending:%d",
 			g.gPengFramesAttack(), g.gPengFramesDeath(), g.pendingWinner), 8, 24)
 	}
+	if g.debugMode {
+		for _, a := range g.attacks {
+			ebitenutil.DrawRect(
+				screen,
+				a.X-g.cameraX, a.Y-g.cameraY,
+				a.W, a.H,
+				color.RGBA{255, 0, 0, 128}, // semi-transparent red
+			)
+		}
+	}
+
 }
 
 // Fallback frame counts if auto-detection can’t infer columns

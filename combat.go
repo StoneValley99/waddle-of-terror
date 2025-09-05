@@ -6,12 +6,13 @@ import (
 )
 
 type AttackBox struct {
-	PosX, PosY float64
-	W, H       float64
-	LifeMS     int
-	Created    time.Time
-	Damage     int
-	Hit        bool // ensure each box only counts once
+	X, Y float64
+	W, H float64
+
+	LifeMS  int
+	Created time.Time
+	Damage  int
+	Hit     bool // ensure each box only counts once
 }
 
 func (a AttackBox) Expired(now time.Time) bool {
@@ -20,26 +21,37 @@ func (a AttackBox) Expired(now time.Time) bool {
 
 // Build a short-lived hurtbox in front of the vampire based on direction.
 // Tighter size + slightly shorter life so you can't hit from far away.
-func BuildAttackBox(playerX, playerY float64, direction int) AttackBox {
-	w, h := 20.0*3, 16.0*3 // was 24x20 (tighter now)
-	ax, ay := playerX, playerY
+func BuildAttackBox(x, y float64, dir int) AttackBox {
+	sizeW := spriteW * 1 // wider than vampire
+	sizeH := spriteH * 1 // taller than vampire
+	offset := 60.0       // how far in front of vampire the box extends
 
-	switch direction {
-	case DirRight:
-		ax = playerX + spriteW
-		ay = playerY + (spriteH-h)/2
-	case DirLeft:
-		ax = playerX - w
-		ay = playerY + (spriteH-h)/2
+	var cx, cy float64
+
+	switch dir {
 	case DirUp:
-		ax = playerX + (spriteW-w)/2
-		ay = playerY - h
+		cx = x + (spriteW-sizeW)/2
+		cy = y - offset
 	case DirDown:
-		ax = playerX + (spriteW-w)/2
-		ay = playerY + spriteH
+		cx = x + (spriteW-sizeW)/2
+		cy = y + spriteH - sizeH + offset
+	case DirLeft:
+		cx = x - offset
+		cy = y + (spriteH-sizeH)/2
+	case DirRight:
+		cx = x + spriteW - sizeW + offset
+		cy = y + (spriteH-sizeH)/2
 	}
 
-	return AttackBox{PosX: ax, PosY: ay, W: w, H: h, LifeMS: 120, Damage: 1}
+	return AttackBox{
+		X:       cx,
+		Y:       cy,
+		W:       sizeW,
+		H:       sizeH,
+		Created: time.Now(),
+		LifeMS:  150, // lasts ~0.15s
+		Damage:  1,
+	}
 }
 
 func ApplyAttackToPenguin(a AttackBox, p *PenguinEnemy, now time.Time) bool {
@@ -51,7 +63,7 @@ func ApplyAttackToPenguin(a AttackBox, p *PenguinEnemy, now time.Time) bool {
 	}
 
 	px, py, pw, ph := PenguinCollider(p.x, p.y)
-	if !RectsOverlap(a.PosX, a.PosY, a.W, a.H, px, py, pw, ph) {
+	if !RectsOverlap(a.X, a.Y, a.W, a.H, px, py, pw, ph) {
 		return false
 	}
 
@@ -64,8 +76,8 @@ func ApplyAttackToPenguin(a AttackBox, p *PenguinEnemy, now time.Time) bool {
 	}
 
 	// Small knockback away from the attack center (feels good!)
-	ax := a.PosX + a.W/2
-	ay := a.PosY + a.H/2
+	ax := a.X + a.W/2
+	ay := a.Y + a.H/2
 	cx := px + pw/2
 	cy := py + ph/2
 	dx := cx - ax

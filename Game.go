@@ -64,6 +64,15 @@ func main() {
 		pengFramesDeath:   2,
 		attackCooldown:    300 * time.Millisecond,
 
+		attacks:              []AttackBox{},
+		hitCount:             0,
+		vampireWins:          0,
+		penguinWins:          0,
+		pendingWinner:        0,
+		gameOver:             false,
+		respawnButtonVisible: false,
+		gameStarted:          false,
+
 		penguin: PenguinEnemy{
 			x:             300,
 			y:             300,
