@@ -39,22 +39,3 @@ func signf(v float64) float64 {
 	}
 	return 0
 }
-
-// --- Tight AABBs (centered), tuned smaller than the full sprite ---
-// Tweak these scale factors if you want even tighter/looser boxes.
-func VampCollider(x, y float64) (cx, cy, cw, ch float64) {
-	cw = spriteW * 0.48 // ~46px of 96
-	ch = spriteH * 0.58 // ~56px of 96
-	cx = x + (spriteW-cw)/2
-	// Slightly lower to match body mass (down from center ~10% of spriteH)
-	cy = y + (spriteH-ch)*0.7
-	return
-}
-
-func PenguinCollider(x, y float64) (cx, cy, cw, ch float64) {
-	cw = spriteW * 0.42 // ~40px of 96
-	ch = spriteH * 0.50 // ~48px of 96
-	cx = x + (spriteW-cw)/2
-	cy = y + (spriteH-ch)/2
-	return
-}

@@ -1,42 +1,71 @@
 package main
 
+// --- Colliders (tight AABBs), tuned smaller than full sprite ---
+// These are centered rectangles smaller than the drawn sprite so collisions feel "fairer".
+func VampCollider(x, y float64) (cx, cy, cw, ch float64) {
+	cw = spriteW * 0.48 // ~46px of 96
+	ch = spriteH * 0.58 // ~56px of 96
+	cx = x + (spriteW-cw)/2
+	// Slightly lower to match body mass (down from center ~10% of spriteH)
+	cy = y + (spriteH-ch)*0.7
+	return
+}
+
+func PenguinCollider(x, y float64) (cx, cy, cw, ch float64) {
+	cw = spriteW * 0.42 // ~40px of 96
+	ch = spriteH * 0.50 // ~48px of 96
+	cx = x + (spriteW-cw)/2
+	cy = y + (spriteH-ch)/2
+	return
+}
+
+// --- Rectangle overlap check ---
 func RectsOverlap(ax, ay, aw, ah, bx, by, bw, bh float64) bool {
-	return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by
+	return ax < bx+bw &&
+		ax+aw > bx &&
+		ay < by+bh &&
+		ay+ah > by
 }
 
-// Push (mx,my) out of (sx,sy) along the smallest overlap axis.
-func ResolveDynamicVsSolid(mx, my *float64, mw, mh float64, sx, sy, sw, sh float64) {
-	ax1, ay1 := *mx, *my
-	ax2, ay2 := ax1+mw, ay1+mh
-
-	bx1, by1 := sx, sy
-	bx2, by2 := bx1+sw, by1+sh
-
-	overLeft := bx2 - ax1  // push left  (positive moves actor left)
-	overRight := ax2 - bx1 // push right (positive moves actor right)
-	overUp := by2 - ay1    // push up
-	overDown := ay2 - by1  // push down
-
-	// pick smallest absolute overlap
-	minX := overLeft
-	if overRight < minX {
-		minX = -overRight
-	}
-	minY := overUp
-	if overDown < minY {
-		minY = -overDown
+// --- Collision resolution (simple pushback) ---
+// Shoves dynamic object (dx,dy) away from solid (sx,sy).
+func ResolveDynamicVsSolid(dx, dy *float64, dw, dh, sx, sy, sw, sh float64) {
+	// Basic overlap resolution using minimum translation vector
+	if !RectsOverlap(*dx, *dy, dw, dh, sx, sy, sw, sh) {
+		return
 	}
 
-	if abs(minX) < abs(minY) {
-		*mx += minX
-	} else {
-		*my += minY
-	}
-}
+	// Distances to edges
+	leftPenetration := (*dx + dw) - sx
+	rightPenetration := (sx + sw) - *dx
+	topPenetration := (*dy + dh) - sy
+	bottomPenetration := (sy + sh) - *dy
 
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
+	// Choose smallest axis to resolve
+	minPen := leftPenetration
+	axis := "left"
+
+	if rightPenetration < minPen {
+		minPen = rightPenetration
+		axis = "right"
 	}
-	return f
+	if topPenetration < minPen {
+		minPen = topPenetration
+		axis = "top"
+	}
+	if bottomPenetration < minPen {
+		minPen = bottomPenetration
+		axis = "bottom"
+	}
+
+	switch axis {
+	case "left":
+		*dx -= minPen
+	case "right":
+		*dx += minPen
+	case "top":
+		*dy -= minPen
+	case "bottom":
+		*dy += minPen
+	}
 }
