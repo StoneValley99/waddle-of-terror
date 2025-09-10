@@ -22,34 +22,41 @@ func (a AttackBox) Expired(now time.Time) bool {
 // Build a short-lived hurtbox in front of the vampire based on direction.
 // Tighter size + slightly shorter life so you can't hit from far away.
 func BuildAttackBox(x, y float64, dir int) AttackBox {
-	sizeW := spriteW * 1 // wider than vampire
-	sizeH := spriteH * 1 // taller than vampire
-	offset := 60.0       // how far in front of vampire the box extends
+	reach := 60.0
+	thickness := 40.0
 
-	var cx, cy float64
+	vx, vy, vw, vh := VampCollider(x, y)
+	cx := vx + vw/2
+	cy := vy + vh/2
+
+	var ax, ay, w, h float64
 
 	switch dir {
 	case DirUp:
-		cx = x + (spriteW-sizeW)/2
-		cy = y - offset
+		w, h = thickness, reach
+		ax = cx - w/2
+		ay = vy - reach
 	case DirDown:
-		cx = x + (spriteW-sizeW)/2
-		cy = y + spriteH - sizeH + offset
+		w, h = thickness, reach
+		ax = cx - w/2
+		ay = vy + vh
 	case DirLeft:
-		cx = x - offset
-		cy = y + (spriteH-sizeH)/2
+		w, h = reach, thickness
+		ax = vx - reach
+		ay = cy - h/2
 	case DirRight:
-		cx = x + spriteW - sizeW + offset
-		cy = y + (spriteH-sizeH)/2
+		w, h = reach, thickness
+		ax = vx + vw
+		ay = cy - h/2
 	}
 
 	return AttackBox{
-		X:       cx,
-		Y:       cy,
-		W:       sizeW,
-		H:       sizeH,
+		X:       ax,
+		Y:       ay,
+		W:       w,
+		H:       h,
 		Created: time.Now(),
-		LifeMS:  150, // lasts ~0.15s
+		LifeMS:  150,
 		Damage:  1,
 	}
 }

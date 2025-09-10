@@ -3,17 +3,19 @@ package main
 // --- Colliders (tight AABBs), tuned smaller than full sprite ---
 // These are centered rectangles smaller than the drawn sprite so collisions feel "fairer".
 func VampCollider(x, y float64) (cx, cy, cw, ch float64) {
-	cw = spriteW * 0.48 // ~46px of 96
-	ch = spriteH * 0.58 // ~56px of 96
-	cx = x + (spriteW-cw)/2
-	// Slightly lower to match body mass (down from center ~10% of spriteH)
-	cy = y + (spriteH-ch)*0.7
+	cw = spriteW * 0.45 // about half the width
+	ch = spriteH * 0.5  // about half the height (torso/legs only)
+
+	// Anchor to bottom center of sprite
+	cx = x + (spriteW-cw)/2 + 30
+	cy = y + spriteH - ch // push box to bottom half of sprite
+
 	return
 }
 
 func PenguinCollider(x, y float64) (cx, cy, cw, ch float64) {
-	cw = spriteW * 0.42 // ~40px of 96
-	ch = spriteH * 0.50 // ~48px of 96
+	cw = spriteW * 0.6 // penguin is small round
+	ch = spriteH * 0.6
 	cx = x + (spriteW-cw)/2
 	cy = y + (spriteH-ch)/2
 	return

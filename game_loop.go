@@ -594,14 +594,19 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			g.gPengFramesAttack(), g.gPengFramesDeath(), g.pendingWinner), 8, 24)
 	}
 	if g.debugMode {
+		// Vampire body collider
+		vx, vy, vw, vh := VampCollider(g.x, g.y)
+		ebitenutil.DrawRect(screen, vx-g.cameraX, vy-g.cameraY, vw, vh, color.RGBA{0, 255, 0, 128})
+
+		// Penguin body collider
+		px, py, pw, ph := PenguinCollider(g.penguin.x, g.penguin.y)
+		ebitenutil.DrawRect(screen, px-g.cameraX, py-g.cameraY, pw, ph, color.RGBA{0, 0, 255, 128})
+
+		// Active attack boxes
 		for _, a := range g.attacks {
-			ebitenutil.DrawRect(
-				screen,
-				a.X-g.cameraX, a.Y-g.cameraY,
-				a.W, a.H,
-				color.RGBA{255, 0, 0, 128}, // semi-transparent red
-			)
+			ebitenutil.DrawRect(screen, a.X-g.cameraX, a.Y-g.cameraY, a.W, a.H, color.RGBA{255, 0, 0, 128})
 		}
+
 	}
 
 }
