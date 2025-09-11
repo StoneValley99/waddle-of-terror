@@ -7,7 +7,8 @@ type PenguinState int
 const (
 	PengIdle PenguinState = iota
 	PengAttack
-	PengDeath
+	PengDeath //Penguin dies
+	PengDead  //Penguin is dead
 )
 
 type PenguinEnemy struct {

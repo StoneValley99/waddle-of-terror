@@ -266,8 +266,9 @@ func (g *Game) Update() error {
 	// --- Let penguin death animation play fully before hiding & scoring ---
 	if g.penguin.visible && g.penguin.State == PengDeath {
 		if g.penguin.frame >= g.pengColsDeath()-1 {
-			// Death animation finished
-			g.penguin.visible = false
+			// Switch to "dead" state and stay on last frame
+			g.penguin.State = PengDead
+			g.penguin.frame = g.pengColsDeath() - 1
 			g.vampireWins++
 			g.endRound()
 		}
@@ -486,6 +487,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		case PengAttack:
 			if g.enemyPengAttackSheet != nil {
 				sheet = g.enemyPengAttackSheet
+			} else {
+				sheet = g.enemyPengSheet
+			}
+		case PengDead:
+			if g.enemyPengDeathSheet != nil {
+				sheet = g.enemyPengDeathSheet
+				// Force to last frame of death anim
+				g.penguin.frame = g.pengColsDeath() - 1
 			} else {
 				sheet = g.enemyPengSheet
 			}

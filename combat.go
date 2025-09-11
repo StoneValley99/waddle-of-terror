@@ -22,8 +22,8 @@ func (a AttackBox) Expired(now time.Time) bool {
 // Build a short-lived hurtbox in front of the vampire based on direction.
 // Tighter size + slightly shorter life so you can't hit from far away.
 func BuildAttackBox(x, y float64, dir int) AttackBox {
-	reach := 60.0
-	thickness := 40.0
+	reach := 70.0
+	thickness := 60.0
 
 	vx, vy, vw, vh := VampCollider(x, y)
 	cx := vx + vw/2
@@ -101,7 +101,7 @@ func ApplyAttackToPenguin(a AttackBox, p *PenguinEnemy, now time.Time) bool {
 		// Lethal → play death anim, stop moving; round ends after anim in Update()
 		p.State = PengDeath
 		p.frame = 0
-		p.deathFrameDelay = 0
+		p.deathFrameDelay = 2
 		p.speed = 0
 		// keep p.visible = true so the death anim actually shows
 	} else {
